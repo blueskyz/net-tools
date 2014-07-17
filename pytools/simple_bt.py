@@ -22,6 +22,7 @@ class SimpleDownloader(object):
     _active_downloads = 8
     _torrent_upload_limit = 50000
     _torrent_download_limit = 0
+    _info_hash_set = {}
     def __init__(self, session_file='session.state', delay_interval=5):
         self._session_file = session_file
         self._delay_interval = delay_interval
@@ -36,6 +37,9 @@ class SimpleDownloader(object):
                 alert.handle.set_upload_limit(self._torrent_upload_limit)
                 alert.handle.set_download_limit(self._torrent_download_limit)
                 self._handle_list.append(alert.handle)
+            elif isinstance(alert, lt.dht_announce_alert):
+                info_hash = alert.info_hash.to_string().encode('hex')
+                self._info_hash_set[info_hash] = (alert.ip, alert.port)
 
     # 从文件中载入 session 状态
     def _load_state(self, ses_file):
@@ -53,6 +57,7 @@ class SimpleDownloader(object):
     # 创建 session 对象
     def create_session(self, tcp_port=32881, udp_port=32881):
         self._session = lt.session()
+        self._session.set_alert_mask(lt.alert.category_t.all_categories)
         self._session.listen_on(tcp_port, udp_port)
         self._session.add_dht_router('router.bittorrent.com', 6881)
         self._session.add_dht_router('router.utorrent.com', 6881)
@@ -119,6 +124,8 @@ class SimpleDownloader(object):
                             name,
                             s.progress * 100, 
                             [s.state, 'paused'][s.paused]))
+                show_content.append('       info => %s\n' %
+                        h.info_hash().to_string().encode('hex'))
                 show_content.append('       down: %.1f kB/s up: %.1f kB/s\n'
                         '       peers: %d all_peers: %d\n'
                         '       total_download: %.3f MB/s '
@@ -157,6 +164,8 @@ class SimpleDownloader(object):
                     (ses_state.download_rate / 1000))
             show_content.append('  upload rate: %.1f kB/s\n' %
                     (ses_state.upload_rate / 1000))
+            show_content.append('  info hash collection: %d, %r\n' %
+                    (len(self._info_hash_set), self._info_hash_set))
             show_content.append('\n')
             print ''.join(show_content)
 
@@ -165,17 +174,28 @@ if __name__ == '__main__':
     link = 'magnet:?xt=urn:btih:0951c8405728344220872c2311a2bfa53b3c54ef&tr=udp://open.demonii.com:1337&tr=udp://tracker.publicbt.com:80/announce&tr=udp://tracker.openbittorrent.com:80/announce&tr=udp://tracker.istole.it:80/announce&tr=http://tracker.torrentfrancais.com/announce'
     link1 = 'magnet:?xt=urn:btih:3a3fcce9700086fdac36c30dce2b8f2fd7ba85f2&tr=udp://open.demonii.com:1337&tr=udp://tracker.publicbt.com:80/announce&tr=udp://tracker.openbittorrent.com:80/announce&tr=udp://tracker.istole.it:80/announce&tr=http://tracker.torrentfrancais.com/announce'
     link2 = 'magnet:?xt=urn:btih:d4f99b9dfc5cbfd6565db7d86d8905fb778701aa&tr=udp://open.demonii.com:1337&tr=udp://tracker.publicbt.com:80/announce&tr=udp://tracker.openbittorrent.com:80/announce&tr=udp://tracker.istole.it:80/announce&tr=http://tracker.torrentfrancais.com/announce'
-    #err link3 = 'magnet:?xt=urn:btih:04e96c38e0a3c91b55182efd24c5c7e21cdcb75b&tr.0=udp://open.demonii.com:1337&tr.1=udp://tracker.publicbt.com:80/announce&tr.2=udp://tracker.openbittorrent.com:80/announce&tr.3=udp://tracker.istole.it:80/announce&tr.4=http://tracker.torrentfrancais.com/announce'
+    link3 = 'magnet:?xt=urn:btih:04e96c38e0a3c91b55182efd24c5c7e21cdcb75b&tr.0=udp://open.demonii.com:1337&tr.1=udp://tracker.publicbt.com:80/announce&tr.2=udp://tracker.openbittorrent.com:80/announce&tr.3=udp://tracker.istole.it:80/announce&tr.4=http://tracker.torrentfrancais.com/announce'
+    #link3 = 'magnet:?xt=urn:btih:fe3c19e9867e0385774e33ad84c6b6eeb238deed'
+    testlink = 'magnet:?xt=urn:btih:f5b642f55aa44634b96521ba271ecce7b4ed5e99'
+    testlink2 = 'magnet:?xt=urn:btih:29c29ffb940a104e70425fe58175e1df54f48088'
+    testlink3 = 'magnet:?xt=urn:btih:f5a89268388ad3fe59719f76e560267d1715bcfd'
     torrent_file = './test.torrent'
     torrent_file1 = './010314-515.torrent'
+    torrent_file2 = '58.DDK082.torrent'
+    torrent_file3 = '36.DANDY-327.torrent'
 
     sd = SimpleDownloader()
     sd.create_session()
-    sd.add_torrent(torrent_file)
-    sd.add_torrent(torrent_file1)
-    sd.add_magnet(link)
-    sd.add_magnet(link1)
-    sd.add_magnet(link2)
+    #sd.add_torrent(torrent_file)
+    #sd.add_torrent(torrent_file1)
+    #sd.add_torrent(torrent_file2)
+    #sd.add_torrent(torrent_file3)
+    #sd.add_magnet(link)
+    #sd.add_magnet(link1)
+    #sd.add_magnet(link2)
     #sd.add_magnet(link3)
+    sd.add_magnet(testlink)
+    sd.add_magnet(testlink2)
+    sd.add_magnet(testlink3)
     sd.start_work()
 
