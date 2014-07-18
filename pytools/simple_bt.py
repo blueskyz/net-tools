@@ -114,10 +114,17 @@ class SimpleDownloader(object):
             for (i, h) in enumerate(self._handle_list):
                 s = h.status()
                 name = 'unknown'
+                files = []
                 if h.torrent_file() is not None:
-                    name = h.torrent_file().name()
+                    torrent_file = h.get_torrent_info()
+                    name = torrent_file.name()
+                    file_nums = torrent_file.num_files()
+                    for idx in range(file_nums):
+                        files.append(torrent_file.file_at(idx).path)
                     if os.name == 'nt':
                         name = name.decode('utf-8')
+                        files = [item.decode('utf-8') for item in files]
+
                 show_content.append('  idx: %d => name %s\n'
                         '       %.2f%% complete state: %s\n' %
                         (i, 
@@ -126,6 +133,9 @@ class SimpleDownloader(object):
                             [s.state, 'paused'][s.paused]))
                 show_content.append('       info => %s\n' %
                         h.info_hash().to_string().encode('hex'))
+                if files:
+                    show_content.append('       files: %s\n' % 
+                            '\n              '.join(files))
                 show_content.append('       down: %.1f kB/s up: %.1f kB/s\n'
                         '       peers: %d all_peers: %d\n'
                         '       total_download: %.3f MB/s '
@@ -172,30 +182,13 @@ class SimpleDownloader(object):
 
 if __name__ == '__main__':
     link = 'magnet:?xt=urn:btih:0951c8405728344220872c2311a2bfa53b3c54ef&tr=udp://open.demonii.com:1337&tr=udp://tracker.publicbt.com:80/announce&tr=udp://tracker.openbittorrent.com:80/announce&tr=udp://tracker.istole.it:80/announce&tr=http://tracker.torrentfrancais.com/announce'
-    link1 = 'magnet:?xt=urn:btih:3a3fcce9700086fdac36c30dce2b8f2fd7ba85f2&tr=udp://open.demonii.com:1337&tr=udp://tracker.publicbt.com:80/announce&tr=udp://tracker.openbittorrent.com:80/announce&tr=udp://tracker.istole.it:80/announce&tr=http://tracker.torrentfrancais.com/announce'
-    link2 = 'magnet:?xt=urn:btih:d4f99b9dfc5cbfd6565db7d86d8905fb778701aa&tr=udp://open.demonii.com:1337&tr=udp://tracker.publicbt.com:80/announce&tr=udp://tracker.openbittorrent.com:80/announce&tr=udp://tracker.istole.it:80/announce&tr=http://tracker.torrentfrancais.com/announce'
-    link3 = 'magnet:?xt=urn:btih:04e96c38e0a3c91b55182efd24c5c7e21cdcb75b&tr.0=udp://open.demonii.com:1337&tr.1=udp://tracker.publicbt.com:80/announce&tr.2=udp://tracker.openbittorrent.com:80/announce&tr.3=udp://tracker.istole.it:80/announce&tr.4=http://tracker.torrentfrancais.com/announce'
-    #link3 = 'magnet:?xt=urn:btih:fe3c19e9867e0385774e33ad84c6b6eeb238deed'
-    testlink = 'magnet:?xt=urn:btih:f5b642f55aa44634b96521ba271ecce7b4ed5e99'
-    testlink2 = 'magnet:?xt=urn:btih:29c29ffb940a104e70425fe58175e1df54f48088'
-    testlink3 = 'magnet:?xt=urn:btih:f5a89268388ad3fe59719f76e560267d1715bcfd'
+    testlink = 'magnet:?xt=urn:btih:29c29ffb940a104e70425fe58175e1df54f48088'
     torrent_file = './test.torrent'
-    torrent_file1 = './010314-515.torrent'
-    torrent_file2 = '58.DDK082.torrent'
-    torrent_file3 = '36.DANDY-327.torrent'
 
     sd = SimpleDownloader()
     sd.create_session()
     #sd.add_torrent(torrent_file)
-    #sd.add_torrent(torrent_file1)
-    #sd.add_torrent(torrent_file2)
-    #sd.add_torrent(torrent_file3)
     #sd.add_magnet(link)
-    #sd.add_magnet(link1)
-    #sd.add_magnet(link2)
-    #sd.add_magnet(link3)
     sd.add_magnet(testlink)
-    sd.add_magnet(testlink2)
-    sd.add_magnet(testlink3)
     sd.start_work()
 
