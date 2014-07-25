@@ -58,7 +58,8 @@ class CollectorServices(service.Service):
 
     def startService(self):
         log.msg('start run collectord')
-        self._start_work()
+        if self._work_d is None:
+            self._start_work()
         self._task = task.LoopingCall(self._readstat, 'collect_stat.alog')
         self._task.start(10.0)
         log.msg('start listen %d' % self._port)
@@ -73,16 +74,14 @@ class CollectorServices(service.Service):
     def del_query_protocol(self, protocol):
         self._query_protocols.remove(protocol)
 
-    def _start_work(self, result=None):
+    def _start_work(self):
         self._restart_times += 1
         log.msg('restart task times %d' % self._restart_times)
         for cmd in self._before_cmds:
             os.system(cmd)
-        if self._work_d is None:
-            self._work_d = utils.getProcessOutput(self._run_cmd,
-                                                  self._run_args)
-            self._work_d.addCallbacks(self._work_finish, self._work_err)
-            self._work_d.addCallbacks(self._start_work)
+        self._work_d = utils.getProcessOutput(self._run_cmd,
+                                              self._run_args)
+        self._work_d.addCallbacks(self._work_finish, self._work_err)
 
     def _work_finish(self, result):
         log.msg('process exit, msg[%s]' % result)
@@ -93,6 +92,8 @@ class CollectorServices(service.Service):
         self._work_d = None
 
     def _readstat(self, statfile):
+        if self._work_d is None:
+            self._start_work()
         if self._query_protocols and os.path.isfile(statfile):
             try:
                 with open(statfile, 'rb') as f:

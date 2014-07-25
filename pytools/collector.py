@@ -31,6 +31,7 @@ class Collector(object):
     _meta_count = 0
     _meta_list = {}
     _tpath = None
+    _auto_magnet_count = 0
 
     def __init__(self,
                  session_nums=50,
@@ -154,6 +155,45 @@ class Collector(object):
                   'url': 'magnet:?xt=urn:btih:%s' % info_hash}
         self._download_meta_session.async_add_torrent(params)
 
+    def add_hot_magnet(self, link=None):
+        count = len(self._sessiones)
+        hot_magnets = []
+        step = count
+        for info_hash in self._meta_list:
+            if self._meta_list[info_hash] > 30:
+                hot_magnets.append('magnet:?xt=urn:btih:%s' % info_hash)
+                step -= 1
+            if step <= 0:
+                break
+        self._auto_magnet_count = len(hot_magnets)
+        if len(hot_magnets) < count:
+            step = count - len(hot_magnets)
+            if link:
+                while True:
+                    hot_magnets.append(link)
+                    step -= 1
+                    if step <= 0:
+                        break
+            else:
+                for info_hash in self._meta_list:
+                    hot_magnets.append('magnet:?xt=urn:btih:%s' % info_hash)
+                    step -= 1
+                    if step <= 0:
+                        break
+
+        count = 0
+        for session in self._sessiones:
+            params = {'save_path': os.path.join(os.curdir,
+                                                'collections',
+                                                'magnet_' + str(count)),
+                      'storage_mode': lt.storage_mode_t.storage_mode_sparse,
+                      'paused': False,
+                      'auto_managed': True,
+                      'duplicate_is_error': True,
+                      'url': hot_magnets[count]}
+            session.async_add_torrent(params)
+            count += 1
+
     # 添加磁力链接
     def add_magnet(self, link):
         count = 0
@@ -206,6 +246,7 @@ class Collector(object):
             interval = time.time() - begin_time
             torrents = self._download_meta_session.get_torrents()
             show_content.append('  run time: %s' % self._get_runtime(interval))
+            show_content.append('  auto magnets: %d' % self._auto_magnet_count)
             show_content.append('  downloading meta: %d' % len(torrents))
             show_content.append('  info hash collection: %d (%f /minute)' %
                                 (self._meta_count,
@@ -240,17 +281,17 @@ if __name__ == '__main__':
     stat_file = sys.argv[2]
 
     link = 'magnet:?xt=urn:btih:ceab7a5dac14eef7a6614ac5927b90bbe8a2149d'\
-           '&tr.0=udp://open.demonii.com:1337' \
-           '&tr.1=udp://tracker.publicbt.com:80/announce' \
-           '&tr.2=udp://tracker.openbittorrent.com:80/announce&' \
-           'tr.3=udp://tracker.istole.it:80/announce&' \
-           'tr.4=http://tracker.torrentfrancais.com/announce'
+           '&tr=udp://open.demonii.com:1337' \
+           '&tr=udp://tracker.publicbt.com:80/announce' \
+           '&tr=udp://tracker.openbittorrent.com:80/announce&' \
+           'tr=udp://tracker.istole.it:80/announce&' \
+           'tr=http://tracker.torrentfrancais.com/announce'
     testlink = 'magnet:?xt=urn:btih:f5b642f55aa44634b96521ba271ecce7b4ed5e99'
     torrent_file = './test.torrent'
 
-    sd = Collector(session_nums=300,
+    sd = Collector(session_nums=400,
                    result_file=result_file,
                    stat_file=stat_file)
     sd.create_session(32900)
-    sd.add_magnet(link)
+    sd.add_hot_magnet(link)
     sd.start_work()
