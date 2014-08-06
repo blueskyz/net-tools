@@ -28,7 +28,7 @@ class Collector(object):
     _torrent_download_limit = 20000
     _sessions = []
     _session_work_num = 10
-    _download_meta_session = None
+    _download_metadata_nums = 0
     _info_hash_set = {}
     _meta_count = 0
     _meta_list = {}
@@ -39,7 +39,7 @@ class Collector(object):
                  session_nums=50,
                  delay_interval=20,
                  # exit_time=2*60,
-                 exit_time=60*60,
+                 exit_time=5*60,
                  result_file=None,
                  stat_file=None):
         self._session_nums = session_nums
@@ -81,7 +81,7 @@ class Collector(object):
 
     # 辅助函数
     # 事件通知处理函数
-    def _handle_alerts(self, alerts):
+    def _handle_alerts(self, session, alerts):
         while len(alerts):
             alert = alerts.pop()
             if isinstance(alert, lt.add_torrent_alert):
@@ -93,14 +93,14 @@ class Collector(object):
                 if info_hash in self._meta_list:
                     self._meta_list[info_hash] += 1
                 else:
-                    self._add_magnet(info_hash)
+                    self._add_magnet(session, info_hash)
             elif isinstance(alert, lt.dht_get_peers_alert):
                 info_hash = alert.info_hash.to_string().encode('hex')
                 self._info_hash_set[info_hash] = None
                 if info_hash in self._meta_list:
                     self._meta_list[info_hash] += 1
                 else:
-                    self._add_magnet(info_hash)
+                    self._add_magnet(session, info_hash)
             elif isinstance(alert, lt.metadata_received_alert):
                 info_hash = alert.handle.info_hash().to_string().encode('hex')
                 if info_hash in self._info_hash_set:
@@ -111,7 +111,11 @@ class Collector(object):
                         entry = lt.create_torrent(info).generate()
                         f.write(lt.bencode(entry))
                     self._meta_count += 1
-                    self._download_meta_session.remove_torrent(alert.handle)
+                    session.remove_torrent(alert.handle)
+                    self._download_metadata_nums -= 1
+                    # fixme: 当从同一个初始link下载时，
+                    # 可能并不是_download_meta_session的handle，误删崩溃
+                    # self._download_meta_session.remove_torrent(alert.handle)
 
     # 从文件中载入 session 状态
     def _load_state(self, ses_file):
@@ -137,25 +141,9 @@ class Collector(object):
             settings['active_downloads'] = self._active_downloads
             session.set_settings(settings)
             self._sessions.append(session)
-
-        # 创建下载 metadata 的session
-        session = lt.session()
-        session.set_alert_mask(lt.alert.category_t.all_categories)
-        session.listen_on(download_meta_port, download_meta_port)
-        session.add_dht_router('router.bittorrent.com', 6881)
-        session.add_dht_router('router.utorrent.com', 6881)
-        session.add_dht_router('router.bitcomet.com', 6881)
-        session.add_dht_router('dht.transmissionbt.com', 6881)
-        settings = session.get_settings()
-        settings['upload_rate_limit'] = self._upload_rate_limit
-        settings['download_rate_limit'] = self._download_rate_limit
-        settings['active_downloads'] = self._active_downloads_meta
-        session.set_settings(settings)
-        self._download_meta_session = session
-        self._sessions.append(self._download_meta_session)
         return self._sessions
 
-    def _add_magnet(self, info_hash):
+    def _add_magnet(self, session, info_hash):
         params = {'save_path': os.path.join(os.curdir,
                                             'collections',
                                             'magnet_' + info_hash),
@@ -164,7 +152,8 @@ class Collector(object):
                   'auto_managed': True,
                   'duplicate_is_error': True,
                   'url': 'magnet:?xt=urn:btih:%s' % info_hash}
-        self._download_meta_session.async_add_torrent(params)
+        session.async_add_torrent(params)
+        self._download_metadata_nums += 1
 
     def add_hot_magnet(self, link=None):
         count = len(self._sessions) * self._session_work_num
@@ -197,7 +186,7 @@ class Collector(object):
             for i in workids:
                 url = hot_magnets[count]
                 # if i == 0:
-                    # url = link
+                #     url = link
                 params = {'save_path': os.path.join(os.curdir,
                                                     'collections',
                                                     'magnet_' + str(count)),
@@ -252,7 +241,7 @@ class Collector(object):
         while True:
             for session in self._sessions:
                 session.post_torrent_updates()
-                self._handle_alerts(session.pop_alerts())
+                self._handle_alerts(session, session.pop_alerts())
             time.sleep(self._sleep_time)
             if show_interval > 0:
                 show_interval -= 1
@@ -263,7 +252,7 @@ class Collector(object):
             show_content = ['torrents:']
             # 统计信息显示
             interval = time.time() - begin_time
-            torrents = self._download_meta_session.get_torrents()
+            torrent_nums = self._download_metadata_nums
             show_content.append('  pid: %s' % os.getpid())
             show_content.append('  run time: %s' % self._get_runtime(interval))
             show_content.append('  collect session num: %d' %
@@ -271,7 +260,7 @@ class Collector(object):
             show_content.append('  session work num: %d' %
                                 self._session_work_num)
             show_content.append('  auto magnets: %d' % self._auto_magnet_count)
-            show_content.append('  downloading meta: %d' % len(torrents))
+            show_content.append('  downloading meta: %d' % torrent_nums)
             show_content.append('  info hash collection: %d (%f /minute)' %
                                 (self._meta_count,
                                  self._meta_count * 60 / interval))
@@ -314,7 +303,7 @@ if __name__ == '__main__':
     testlink = 'magnet:?xt=urn:btih:f5b642f55aa44634b96521ba271ecce7b4ed5e99'
     torrent_file = './test.torrent'
 
-    sd = Collector(session_nums=30,
+    sd = Collector(session_nums=100,
                    result_file=result_file,
                    stat_file=stat_file)
     sd.create_session(32900)
