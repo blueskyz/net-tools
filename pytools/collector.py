@@ -7,6 +7,7 @@ import sys
 import time
 import json
 import random
+import traceback as tb
 
 import libtorrent as lt
 
@@ -26,9 +27,11 @@ class Collector(object):
     _active_downloads_meta = 100
     _torrent_upload_limit = 20000
     _torrent_download_limit = 20000
+    _start_port = 32800
     _sessions = []
     _session_work_num = 10
     _download_metadata_nums = 0
+    _infohash_queue_from_getpeers = []
     _info_hash_set = {}
     _meta_count = 0
     _meta_list = {}
@@ -100,6 +103,7 @@ class Collector(object):
                 if info_hash in self._meta_list:
                     self._meta_list[info_hash] += 1
                 else:
+                    self._infohash_queue_from_getpeers.append(info_hash)
                     self._add_magnet(session, info_hash)
             elif isinstance(alert, lt.metadata_received_alert):
                 info_hash = alert.handle.info_hash().to_string().encode('hex')
@@ -125,8 +129,21 @@ class Collector(object):
                 entry = lt.bdecode(content)
                 self._session.load_state(entry)
 
+    def _add_magnet(self, session, info_hash):
+        params = {'save_path': os.path.join(os.curdir,
+                                            'collections',
+                                            'magnet_' + info_hash),
+                  'storage_mode': lt.storage_mode_t.storage_mode_sparse,
+                  'paused': False,
+                  'auto_managed': True,
+                  'duplicate_is_error': True,
+                  'url': 'magnet:?xt=urn:btih:%s' % info_hash}
+        session.async_add_torrent(params)
+        self._download_metadata_nums += 1
+
     # 创建 session 对象
-    def create_session(self, begin_port=32801, download_meta_port=32800):
+    def create_session(self, begin_port=32800):
+        self._start_port = begin_port
         for port in range(begin_port, begin_port + self._session_nums):
             session = lt.session()
             session.set_alert_mask(lt.alert.category_t.all_categories)
@@ -143,23 +160,11 @@ class Collector(object):
             self._sessions.append(session)
         return self._sessions
 
-    def _add_magnet(self, session, info_hash):
-        params = {'save_path': os.path.join(os.curdir,
-                                            'collections',
-                                            'magnet_' + info_hash),
-                  'storage_mode': lt.storage_mode_t.storage_mode_sparse,
-                  'paused': False,
-                  'auto_managed': True,
-                  'duplicate_is_error': True,
-                  'url': 'magnet:?xt=urn:btih:%s' % info_hash}
-        session.async_add_torrent(params)
-        self._download_metadata_nums += 1
-
     def add_hot_magnet(self, link=None):
         count = len(self._sessions) * self._session_work_num
         hot_magnets = []
         for info_hash in self._meta_list:
-            if self._meta_list[info_hash] > 20:
+            if self._meta_list[info_hash] > 50:
                 hot_magnets.append('magnet:?xt=urn:btih:%s' % info_hash)
 
         self._auto_magnet_count = len(hot_magnets)
@@ -255,11 +260,14 @@ class Collector(object):
             torrent_nums = self._download_metadata_nums
             show_content.append('  pid: %s' % os.getpid())
             show_content.append('  run time: %s' % self._get_runtime(interval))
+            show_content.append('  start port: %d' % self._start_port)
             show_content.append('  collect session num: %d' %
                                 len(self._sessions))
             show_content.append('  session work num: %d' %
                                 self._session_work_num)
             show_content.append('  auto magnets: %d' % self._auto_magnet_count)
+            show_content.append('  info hash nums from get peers: %d' %
+                                len(self._infohash_queue_from_getpeers))
             show_content.append('  downloading meta: %d' % torrent_nums)
             show_content.append('  info hash collection: %d (%f /minute)' %
                                 (self._meta_count,
@@ -285,6 +293,12 @@ class Collector(object):
             if self._create_torrent_dir():
                 self._backup_result()
 
+        # destory
+        for session in self._sessions:
+            torrents = session.get_torrents()
+            for torrent in torrents:
+                session.remove_torrent(torrent)
+
 
 if __name__ == '__main__':
     if len(sys.argv) != 3:
@@ -303,10 +317,15 @@ if __name__ == '__main__':
     testlink = 'magnet:?xt=urn:btih:f5b642f55aa44634b96521ba271ecce7b4ed5e99'
     torrent_file = './test.torrent'
 
+    # 创建一个每小时固定的端口段，解决因get_peers收集过快，创建任务过多，
+    # 带来的下载torrent文件过慢
+    hour = time.localtime().tm_hour
+    port = range(32800, 33800, 100)
+    port = port[hour%len(port)]
     sd = Collector(session_nums=100,
                    result_file=result_file,
                    stat_file=stat_file)
-    sd.create_session(32900)
+    sd.create_session(port)
     sd.add_hot_magnet(link)
     # sd.add_magnet(link)
     sd.start_work()
