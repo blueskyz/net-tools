@@ -166,7 +166,7 @@ class Collector(object):
             settings['active_downloads'] = self._active_downloads
             settings['auto_manage_startup'] = self._auto_manage_startup
             settings['auto_manage_interval'] = self._auto_manage_interval
-            # settings['dht_announce_interval'] = self._dht_announce_interval
+            settings['dht_announce_interval'] = self._dht_announce_interval
             settings['alert_queue_size'] = self._alert_queue_size
             session.set_settings(settings)
             self._sessions.append(session)
