@@ -17,19 +17,23 @@ class Collector(object):
     一个简单的 bt 下载工具，依赖开源库 libtorrent.
     '''
     # 主循环 sleep 时间
-    _sleep_time = 1
+    _sleep_time = 0.5
     # 下载的 torrent handle 列表
     _handle_list = []
     # 默认下载配置
     _upload_rate_limit = 200000
     _download_rate_limit = 200000
-    _active_downloads = 8
-    _active_downloads_meta = 100
+    _active_downloads = 30
+    _alert_queue_size = 4000
+    _dht_announce_interval = 60
     _torrent_upload_limit = 20000
     _torrent_download_limit = 20000
+    _auto_manage_startup = 30
+    _auto_manage_interval = 15
+
     _start_port = 32800
     _sessions = []
-    _session_work_num = 10
+    _session_work_num = 3
     _download_metadata_nums = 0
     _infohash_queue_from_getpeers = []
     _info_hash_set = {}
@@ -92,17 +96,21 @@ class Collector(object):
                 alert.handle.set_download_limit(self._torrent_download_limit)
             elif isinstance(alert, lt.dht_announce_alert):
                 info_hash = alert.info_hash.to_string().encode('hex')
-                self._info_hash_set[info_hash] = (alert.ip, alert.port)
                 if info_hash in self._meta_list:
                     self._meta_list[info_hash] += 1
+                elif info_hash in self._info_hash_set:
+                    pass
                 else:
+                    self._info_hash_set[info_hash] = (alert.ip, alert.port)
                     self._add_magnet(session, info_hash)
             elif isinstance(alert, lt.dht_get_peers_alert):
                 info_hash = alert.info_hash.to_string().encode('hex')
-                self._info_hash_set[info_hash] = None
                 if info_hash in self._meta_list:
                     self._meta_list[info_hash] += 1
+                elif info_hash in self._info_hash_set:
+                    pass
                 else:
+                    self._info_hash_set[info_hash] = None
                     self._infohash_queue_from_getpeers.append(info_hash)
                     self._add_magnet(session, info_hash)
             elif isinstance(alert, lt.metadata_received_alert):
@@ -156,6 +164,10 @@ class Collector(object):
             settings['upload_rate_limit'] = self._upload_rate_limit
             settings['download_rate_limit'] = self._download_rate_limit
             settings['active_downloads'] = self._active_downloads
+            settings['auto_manage_startup'] = self._auto_manage_startup
+            settings['auto_manage_interval'] = self._auto_manage_interval
+            # settings['dht_announce_interval'] = self._dht_announce_interval
+            settings['alert_queue_size'] = self._alert_queue_size
             session.set_settings(settings)
             self._sessions.append(session)
         return self._sessions
@@ -259,6 +271,8 @@ class Collector(object):
             interval = time.time() - begin_time
             torrent_nums = self._download_metadata_nums
             show_content.append('  pid: %s' % os.getpid())
+            show_content.append('  time: %s' %
+                                time.strftime('%Y-%m-%d %H:%M:%S'))
             show_content.append('  run time: %s' % self._get_runtime(interval))
             show_content.append('  start port: %d' % self._start_port)
             show_content.append('  collect session num: %d' %
@@ -266,16 +280,17 @@ class Collector(object):
             show_content.append('  session work num: %d' %
                                 self._session_work_num)
             show_content.append('  auto magnets: %d' % self._auto_magnet_count)
+            show_content.append('  new info hash nums: %d' %
+                                len(self._info_hash_set))
             show_content.append('  info hash nums from get peers: %d' %
                                 len(self._infohash_queue_from_getpeers))
             show_content.append('  downloading meta: %d' % torrent_nums)
-            show_content.append('  info hash collection: %d (%f /minute)' %
-                                (self._meta_count,
-                                 self._meta_count * 60 / interval))
-            show_content.append('  total metadata count: %d' %
-                                len(self._meta_list))
-            show_content.append('  current metadata count: %d' %
+            show_content.append('  torrent collection rate: %f /minute' %
+                                (self._meta_count * 60 / interval))
+            show_content.append('  current torrent count: %d' %
                                 self._meta_count)
+            show_content.append('  total torrent count: %d' %
+                                len(self._meta_list))
             show_content.append('\n')
             try:
                 with open(self._stat_file, 'wb') as f:
@@ -321,7 +336,7 @@ if __name__ == '__main__':
     # 带来的下载torrent文件过慢
     hour = time.localtime().tm_hour
     port = range(32800, 33800, 100)
-    port = port[hour%len(port)]
+    port = port[hour % len(port)]
     sd = Collector(session_nums=100,
                    result_file=result_file,
                    stat_file=stat_file)
